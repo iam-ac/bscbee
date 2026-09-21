@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { CandlestickSeries, ColorType, HistogramSeries, createChart } from 'lightweight-charts';
 import {
   ArrowDown, ArrowLeftRight, BarChart3, Check, ChevronDown, ChevronRight,
   CircleHelp, Copy, ExternalLink, Gauge, Hexagon, Info, LockKeyhole, Menu,
@@ -89,6 +90,15 @@ function formatUsdValue(value) {
 function formatInputAmount(value) {
   if (!Number.isFinite(value) || value <= 0) return '';
   return value.toFixed(8).replace(/\.?0+$/, '');
+}
+
+function formatTimeAgo(value) {
+  if (!value) return '--';
+  const diff = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
+  if (diff < 60) return `${diff} 秒前`;
+  if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`;
+  return `${Math.floor(diff / 86400)} 天前`;
 }
 
 function getTokenDisplay(market) {
@@ -251,6 +261,96 @@ function useLiveTokenData(account) {
   }, [account]);
 
   return { market, walletBalance, bnbBalance };
+}
+
+const CHART_TIMEFRAME_CONFIG = {
+  '1分': { path: 'minute', aggregate: 1, limit: 60 },
+  '5分': { path: 'minute', aggregate: 5, limit: 60 },
+  '1小时': { path: 'hour', aggregate: 1, limit: 48 },
+  '1天': { path: 'day', aggregate: 1, limit: 30 },
+};
+
+function useDashboardLiveData(pairAddress, tokenSymbol, timeframe) {
+  const [chart, setChart] = useState([]);
+  const [trades, setTrades] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      if (!pairAddress) {
+        setChart([]);
+        setTrades([]);
+        return;
+      }
+      try {
+        const poolId = pairAddress.toLowerCase();
+        const config = CHART_TIMEFRAME_CONFIG[timeframe] || CHART_TIMEFRAME_CONFIG['5分'];
+        const [chartResponse, tradesResponse] = await Promise.all([
+          fetch(`https://api.geckoterminal.com/api/v2/networks/bsc/pools/${poolId}/ohlcv/${config.path}?aggregate=${config.aggregate}&limit=${config.limit}&currency=usd`),
+          fetch(`https://api.geckoterminal.com/api/v2/networks/bsc/pools/${poolId}/trades`),
+        ]);
+        const [chartData, tradesData] = await Promise.all([chartResponse.json(), tradesResponse.json()]);
+        const nextChart = Array.from(
+          new Map(
+            (chartData?.data?.attributes?.ohlcv_list || [])
+              .map(item => ({
+                time: Math.floor(Number(item[0])),
+                open: Number(item[1]),
+                high: Number(item[2]),
+                low: Number(item[3]),
+                close: Number(item[4]),
+                volume: Number(item[5]),
+              }))
+              .filter(item =>
+                Number.isFinite(item.time) &&
+                Number.isFinite(item.open) &&
+                Number.isFinite(item.high) &&
+                Number.isFinite(item.low) &&
+                Number.isFinite(item.close) &&
+                Number.isFinite(item.volume) &&
+                item.open > 0 &&
+                item.high > 0 &&
+                item.low > 0 &&
+                item.close > 0
+              )
+              .sort((a, b) => a.time - b.time)
+              .map(item => [item.time, item])
+          ).values()
+        );
+        const nextTrades = (tradesData?.data || []).slice(0, 4).map(item => {
+          const attributes = item.attributes || {};
+          const isBuy = attributes.kind === 'buy';
+          const amount = Number(isBuy ? attributes.to_token_amount : attributes.from_token_amount);
+          return {
+            id: item.id,
+            kind: isBuy ? '买入' : '卖出',
+            wallet: shortAddress(attributes.tx_from_address || ''),
+            amount: `${formatTokenAmount(amount, 0)} ${tokenSymbol}`,
+            time: formatTimeAgo(attributes.block_timestamp),
+          };
+        });
+        if (!cancelled) {
+          setChart(nextChart);
+          setTrades(nextTrades);
+        }
+      } catch {
+        if (!cancelled) {
+          setChart([]);
+          setTrades([]);
+        }
+      }
+    };
+
+    load();
+    const timer = setInterval(load, 30000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [pairAddress, tokenSymbol, timeframe]);
+
+  return { chart, trades };
 }
 
 function BrandMark({ small = false }) {
@@ -559,6 +659,109 @@ function StakingPage({connected,onConnect,showToast,token}) {
 }
 function Metric({label,value,unit,trend}) { return <div className="metric"><span>{label}</span><strong>{value} <small>{unit}</small></strong><em>{trend}</em></div> }
 
+function TradingViewChart({ data }) {
+  const containerRef = useRef(null);
+  const chartRef = useRef(null);
+  const candleSeriesRef = useRef(null);
+  const volumeSeriesRef = useRef(null);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const chart = createChart(containerRef.current, {
+      width: containerRef.current.clientWidth || 0,
+      height: 320,
+      layout: {
+        background: { type: ColorType.Solid, color: 'transparent' },
+        textColor: '#666',
+        fontFamily: 'IBM Plex Mono, monospace',
+      },
+      grid: {
+        vertLines: { color: 'rgba(255,255,255,.05)' },
+        horzLines: { color: 'rgba(255,255,255,.05)' },
+      },
+      crosshair: {
+        vertLine: { color: 'rgba(246,190,60,.35)' },
+        horzLine: { color: 'rgba(246,190,60,.35)' },
+      },
+      rightPriceScale: {
+        borderColor: 'rgba(255,255,255,.08)',
+        scaleMargins: { top: 0.08, bottom: 0.26 },
+      },
+      timeScale: {
+        borderColor: 'rgba(255,255,255,.08)',
+        timeVisible: true,
+        secondsVisible: false,
+      },
+      handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
+      handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true },
+    });
+
+    const candleSeries = chart.addSeries(CandlestickSeries, {
+      upColor: '#72d49b',
+      downColor: '#ee7c78',
+      wickUpColor: '#72d49b',
+      wickDownColor: '#ee7c78',
+      borderVisible: false,
+    });
+
+    const volumeSeries = chart.addSeries(HistogramSeries, {
+      priceFormat: { type: 'volume' },
+      priceScaleId: '',
+    });
+
+    chart.priceScale('').applyOptions({
+      scaleMargins: { top: 0.78, bottom: 0 },
+      borderVisible: false,
+    });
+
+    const resize = () => {
+      if (!containerRef.current) return;
+      chart.applyOptions({ width: containerRef.current.clientWidth || 0 });
+      chart.timeScale().fitContent();
+    };
+
+    chartRef.current = chart;
+    candleSeriesRef.current = candleSeries;
+    volumeSeriesRef.current = volumeSeries;
+
+    window.addEventListener('resize', resize);
+    resize();
+
+    return () => {
+      window.removeEventListener('resize', resize);
+      chart.remove();
+      chartRef.current = null;
+      candleSeriesRef.current = null;
+      volumeSeriesRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!candleSeriesRef.current || !volumeSeriesRef.current || !chartRef.current) return;
+
+    const candleData = data.map(item => ({
+      time: item.time,
+      open: item.open,
+      high: item.high,
+      low: item.low,
+      close: item.close,
+    }));
+
+    const volumeData = data.map(item => ({
+      time: item.time,
+      value: item.volume,
+      color: item.close >= item.open ? 'rgba(114,212,155,.35)' : 'rgba(238,124,120,.35)',
+    }));
+
+    candleSeriesRef.current.setData(candleData);
+    volumeSeriesRef.current.setData(volumeData);
+    chartRef.current.timeScale().fitContent();
+  }, [data]);
+
+  return <div className="tv-chart-wrap"><div className="tv-chart" ref={containerRef}/>{!data.length && <div className="chart-empty">暂无 K 线数据</div>}</div>;
+}
+
 const roadmap=[
   ['01','筑巢','创世期','建立蜜蜂 IP 核心共识，完成 BSC 与 Flap 平台的首发部署。集结初始蜂群，完成社区基石构建。','已完成'],
   ['02','起飞','启动期','蜜蜂正式登陆 Flap 平台。开启链上交易，激活首批传播节点，释放初代 Meme 势能。','进行中'],
@@ -570,12 +773,12 @@ const ecosystem=[['01','蜜蜂 Swap','去中心化链上交易','规划中'],['0
 function RoadmapPage(){return <section className="main-width roadmap-page"><PageIntro eyebrow="THE SWARM ERA / 2026+" title="蜂群" accent="纪元" subtitle="从筑巢到飞升，一场由共识驱动的进化之路。"/><div className="roadmap-progress"><span>EVOLUTION PROGRESS</span><div><i/></div><b>00 / 05</b></div><div className="timeline">{roadmap.map((r,i)=><article key={r[0]} className={i<2?'reached':''}><div className="time-node"><span>{r[0]}</span></div><div className="phase-card"><div className="phase-top"><div><small>PHASE {r[0]} · {r[2]}</small><h2>{r[1]}</h2></div><span className="phase-status"><i/>{r[4]}</span></div><p>{r[3]}</p><div className="phase-foot"><span>{['CORE CONSENSUS','TOKEN LAUNCH','COMMUNITY BUILDER','ECOSYSTEM GROWTH','DAO GOVERNANCE'][i]}</span><Hexagon size={20}/></div></div></article>)}</div><div className="ecosystem-block"><div className="ecosystem-head"><div><div className="eyebrow"><span/>BEE ECOSYSTEM / FULL STACK</div><h2>蜜蜂生态矩阵</h2></div><p>从交易、社区到资产发行与专业工具，构建完整的蜂群基础设施。</p></div><div className="ecosystem-grid">{ecosystem.map((x,i)=><article key={x[0]} className={i<0?'is-live':''}><div className="eco-meta"><span>{x[0]}</span><b>{x[3]}</b></div><h3>{x[1]}</h3><p>{x[2]}</p>{i<0&&<Check size={18}/>}</article>)}</div></div></section>}
 
 function DashboardPage({ market, token }){
- const values=[28,34,31,43,40,52,49,64,57,71,69,84,79,92,88,108,102,121,115,132,129,145];
- const points=values.map((v,i)=>`${i*(800/(values.length-1))},${190-v}`).join(' ');
+ const [timeframe, setTimeframe] = useState('5分');
+ const { chart, trades } = useDashboardLiveData(market.pairAddress, token.symbol, timeframe);
  return <section className="main-width"><PageIntro eyebrow="ON-CHAIN ANALYTICS / LIVE" title="蜂巢" accent="数据" subtitle="链上数据，一目了然。每一笔增长都有迹可循。"><div className="live-badge"><i/> 数据实时同步中</div></PageIntro>
  <div className="metrics four"><Metric label="实时价格 PRICE" value={formatPrice(market.priceUsd)} trend={formatChange(market.change24h)}/><Metric label="总市值 MARKET CAP" value={market.marketCap ? `$${formatTokenAmount(market.marketCap, 0)}` : '--'} trend="实时"/><Metric label="24H 交易量 VOLUME" value={market.volume24h ? `$${formatTokenAmount(market.volume24h, 0)}` : '--'} trend="实时"/><Metric label="合约地址 TOKEN" value={shortAddress(TOKEN_ADDRESS)} trend="BSC 主网"/></div>
- <div className="chart-grid"><div className="panel chart-panel"><div className="chart-header"><div><small>{token.symbol} / USD</small><h2>{formatPrice(market.priceUsd)} <em>{formatChange(market.change24h)}</em></h2></div><div className="chart-tabs"><button>1H</button><button>1D</button><button className="active">1W</button><button>1M</button></div></div><div className="chart-area"><div className="y-axis"><span>$0.005</span><span>$0.004</span><span>$0.003</span><span>$0.002</span></div><svg viewBox="0 0 800 200" preserveAspectRatio="none"><defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#f6be3c" stopOpacity=".32"/><stop offset="1" stopColor="#f6be3c" stopOpacity="0"/></linearGradient></defs><polygon points={`0,200 ${points} 800,200`} fill="url(#area)"/><polyline points={points} fill="none" stroke="#f6be3c" strokeWidth="3" vectorEffect="non-scaling-stroke"/></svg><div className="x-axis"><span>SEP 14</span><span>SEP 16</span><span>SEP 18</span><span>SEP 20</span></div></div></div>
- <div className="panel activity"><div className="panel-head"><div><small>LIVE FEED</small><h2>最新交易</h2></div><RefreshCw size={17}/></div>{[['买入','0x71...4C2',`124,800 ${token.symbol}`,'2 秒前'],['卖出','0xA9...18F',`48,200 ${token.symbol}`,'18 秒前'],['买入','0x3B...92D',`286,500 ${token.symbol}`,'41 秒前'],['买入','0xF2...7A0',`68,900 ${token.symbol}`,'1 分钟前']].map((x,i)=><div className="tx" key={i}><span className={x[0]==='买入'?'buy':'sell'}>{x[0]}</span><b>{x[1]}</b><strong>{x[2]}</strong><small>{x[3]}</small></div>)}</div></div>
+ <div className="chart-grid"><div className="panel chart-panel"><div className="chart-header"><div><small>{token.symbol} / USD</small><h2>{formatPrice(market.priceUsd)} <em>{formatChange(market.change24h)}</em></h2></div><div className="chart-tabs">{['1分','5分','1小时','1天'].map(item => <button key={item} className={timeframe === item ? 'active' : ''} onClick={() => setTimeframe(item)}>{item}</button>)}</div></div><div className="chart-area"><TradingViewChart data={chart}/></div></div>
+ <div className="panel activity"><div className="panel-head"><div><small>LIVE FEED</small><h2>最新交易</h2></div><RefreshCw size={17}/></div>{trades.length ? trades.map(item => <div className="tx" key={item.id}><span className={item.kind==='买入'?'buy':'sell'}>{item.kind}</span><b>{item.wallet}</b><strong>{item.amount}</strong><small>{item.time}</small></div>) : <div className="tx"><span className="buy">--</span><b>--</b><strong>--</strong><small>--</small></div>}</div></div>
  <div className="data-foot"><ShieldCheck/> 数据实时同步 BSC 链上，透明可查 <button onClick={() => window.open(`https://bscscan.com/token/${TOKEN_ADDRESS}`, '_blank', 'noopener,noreferrer')}>查看区块浏览器 <ExternalLink size={14}/></button></div></section>
 }
 
