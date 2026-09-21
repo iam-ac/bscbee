@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { CandlestickSeries, ColorType, HistogramSeries, createChart } from 'lightweight-charts';
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import {
   ArrowDown, ArrowLeftRight, BarChart3, Check, ChevronDown, ChevronRight,
   CircleHelp, Copy, ExternalLink, Gauge, Hexagon, Info, LockKeyhole, Menu,
@@ -10,11 +11,11 @@ import { AbiCoder, BrowserProvider, Contract, JsonRpcProvider, MaxUint256, ZeroA
 import './styles.css';
 
 const navItems = [
-  { id: 'swap', label: '交易兑换', en: 'SWAP' },
-  { id: 'staking', label: '筑巢分红', en: 'STAKING' },
-  { id: 'roadmap', label: '蜂群路线', en: 'ROADMAP' },
-  { id: 'dashboard', label: '蜂巢数据', en: 'DATA' },
-  { id: 'about', label: '关于蜜蜂', en: 'ABOUT' },
+  { id: 'swap', path: '/swap', label: '交易兑换', en: 'SWAP' },
+  { id: 'staking', path: '/staking', label: '筑巢分红', en: 'STAKING' },
+  { id: 'roadmap', path: '/roadmap', label: '蜂群路线', en: 'ROADMAP' },
+  { id: 'dashboard', path: '/dashboard', label: '蜂巢数据', en: 'DATA' },
+  { id: 'about', path: '/about', label: '关于蜜蜂', en: 'ABOUT' },
 ];
 
 const wallets = [
@@ -360,19 +361,33 @@ function BrandMark({ small = false }) {
   </div>;
 }
 
-function App() {
-  const [page, setPage] = useState('swap');
+function getPageByPath(pathname) {
+  return navItems.find(item => item.path === pathname)?.id || 'swap';
+}
+
+function AppShell() {
   const [walletOpen, setWalletOpen] = useState(false);
   const [connected, setConnected] = useState(false);
   const [account, setAccount] = useState('');
   const [mobile, setMobile] = useState(false);
   const [toast, setToast] = useState('');
+  const location = useLocation();
+  const routerNavigate = useNavigate();
   const { market, walletBalance, bnbBalance } = useLiveTokenData(account);
   const token = getTokenDisplay(market);
   const bnbUsdPrice = market.priceUsd && market.priceNative ? market.priceUsd / market.priceNative : null;
+  const page = getPageByPath(location.pathname);
 
   const showToast = (text) => { setToast(text); setTimeout(() => setToast(''), 2500); };
-  const navigate = (id) => { setPage(id); setMobile(false); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  const navigate = (id) => {
+    const nextPath = navItems.find(item => item.id === id)?.path || '/swap';
+    routerNavigate(nextPath);
+  };
+
+  useEffect(() => {
+    setMobile(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [location.pathname]);
 
   useEffect(() => {
     if (!window.ethereum) return;
@@ -461,18 +476,26 @@ function App() {
       </div>
     </header>
 
-    <main key={page} className="page-enter">
-          {page === 'swap' && <SwapPage connected={connected} onConnect={() => setWalletOpen(true)} showToast={showToast} market={market} walletBalance={walletBalance} bnbBalance={bnbBalance} bnbUsdPrice={bnbUsdPrice} token={token}/>}
-      {page === 'staking' && <StakingPage connected={connected} onConnect={() => setWalletOpen(true)} showToast={showToast} token={token}/>}
-      {page === 'roadmap' && <RoadmapPage/>}
-          {page === 'dashboard' && <DashboardPage market={market} token={token}/>}
-      {page === 'about' && <AboutPage token={token}/>}
+    <main key={location.pathname} className="page-enter">
+      <Routes>
+        <Route path="/" element={<Navigate to="/swap" replace />} />
+        <Route path="/swap" element={<SwapPage connected={connected} onConnect={() => setWalletOpen(true)} showToast={showToast} market={market} walletBalance={walletBalance} bnbBalance={bnbBalance} bnbUsdPrice={bnbUsdPrice} token={token}/>} />
+        <Route path="/staking" element={<StakingPage connected={connected} onConnect={() => setWalletOpen(true)} showToast={showToast} token={token}/>} />
+        <Route path="/roadmap" element={<RoadmapPage/>} />
+        <Route path="/dashboard" element={<DashboardPage market={market} token={token}/>} />
+        <Route path="/about" element={<AboutPage token={token}/>} />
+        <Route path="*" element={<Navigate to="/swap" replace />} />
+      </Routes>
     </main>
 
     <footer><div className="footer-brand"><BrandMark small/><span>{token.name} {token.symbol}</span></div><span>Built on BNB Smart Chain</span><span>© 2026 {token.symbol}</span></footer>
     {walletOpen && <WalletModal onClose={() => setWalletOpen(false)} onConnect={connect} connected={connected} account={account} bnbBalance={bnbBalance} walletBalance={walletBalance} token={token}/>}
     {toast && <div className="toast"><Check size={17}/>{toast}</div>}
   </div>;
+}
+
+function App() {
+  return <BrowserRouter><AppShell /></BrowserRouter>;
 }
 
 function PageIntro({ eyebrow, title, accent, subtitle, children }) {
