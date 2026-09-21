@@ -669,7 +669,7 @@ function StakingPage({connected,onConnect,showToast,token}) {
         <div className="period-title"><span>选择锁仓周期</span><small>周期越长，权重越高</small></div>
         <div className="period-grid">{[30,90,180].map(p=><button key={p} onClick={()=>setPeriod(p)} className={period===p?'active':''}><span>{p} 天</span><small>{weights[p]} 权重</small>{period===p&&<Check size={14}/>}</button>)}</div>
         <div className="estimate"><div><span>预计年化收益</span><b>{apys[period]}</b></div><div><span>权重倍数</span><b>{weights[period]}</b></div><div><span>预计解锁时间</span><b>{new Date(Date.now()+period*86400000).toLocaleDateString('zh-CN')}</b></div></div>
-        <button className="primary-action" onClick={()=>connected?showToast(amount?'锁仓请求已提交':'请输入锁仓数量'):onConnect()}>{connected?'授权并确认锁仓':'连接钱包开始锁仓'}<LockKeyhole size={18}/></button>
+        <button className="primary-action" disabled>未开启<LockKeyhole size={18}/></button>
       </div>
       <div className="panel position-panel"><div className="panel-head"><div><small>MY POSITION</small><h2>我的蜂巢</h2></div><span className="hex-number">01</span></div>
         <div className="empty-position"><div className="empty-hive"><Hexagon/><LockKeyhole/></div><h3>尚未建立蜂巢</h3><p>锁仓 {token.symbol} 后，你的仓位与实时收益将在这里展示。</p></div>
