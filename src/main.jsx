@@ -28,6 +28,7 @@ const TOKEN_ADDRESS = '0x20d375b3fafa56cdb872330450ce0ede88bc7777';
 const TOKEN_ICON_URL = 'https://www.iconaves.com/token_icon_request/6aaff2fc5b723b1c00592f44_1789915900.png';
 const BNB_ICON_URL = 'https://assets-cdn.trustwallet.com/blockchains/smartchain/info/logo.png';
 const ROUTER_ADDRESS = '0xFaC8034Dbc0934F9ED07C642EC7C49a98644d765';
+const STAKING_ADDRESS = import.meta.env.VITE_STAKING_ADDRESS || '0xa4274465b7970951070205E753abBE6668888888';
 const PANCAKE_V2_ROUTER_ADDRESS = '0x10ED43C718714eb63d5aA57B78B54704E256024E';
 const WBNB_ADDRESS = '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c';
 const ROUTER_RECIPIENT_SENDER = '0x0000000000000000000000000000000000000001';
@@ -54,6 +55,18 @@ const QUOTE_ROUTER_ABI = [
 const ROUTER_ABI = [
   'function execute(bytes commands, bytes[] inputs, uint256 deadline, address outputToken, uint256 amountOutMinimum) payable returns (uint256 amountOut)',
 ];
+const STAKING_ABI = [
+  'function minStakeAmount() view returns (uint256)',
+  'function nextOrderId() view returns (uint256)',
+  'function referrerOf(address) view returns (address)',
+  'function getRatePlan(uint256 amount, uint8 durationDays) view returns (uint16 monthlyInterestBps, uint16 directReferralBps, uint16 indirectReferralBps)',
+  'function getUserOrderIds(address user) view returns (uint256[])',
+  'function orders(uint256) view returns (address user, address directReferrer, address indirectReferrer, uint256 amount, uint256 directRewardAmount, uint256 indirectRewardAmount, uint64 startTime, uint8 durationDays, uint8 totalPeriods, uint8 claimedPeriods, uint16 monthlyInterestBps, uint16 directReferralBps, uint16 indirectReferralBps, bool unstaked)',
+  'function pendingInterest(uint256 orderId) view returns (uint256 amount, uint8 claimablePeriods)',
+  'function stake(uint256 requestedAmount, uint8 durationDays, address referrer) returns (uint256 orderId)',
+  'function claimInterest(uint256 orderId)',
+  'function unstake(uint256 orderId)',
+];
 const abiCoder = AbiCoder.defaultAbiCoder();
 
 function getReadProvider() {
@@ -64,11 +77,30 @@ function shortAddress(value) {
   return value ? `${value.slice(0, 6)}...${value.slice(-4)}` : '连接钱包';
 }
 
+const SUBSCRIPTS = '₀₁₂₃₄₅₆₇₈₉';
+
+function toSubscript(n) {
+  return String(n).split('').map(d => SUBSCRIPTS[Number(d)]).join('');
+}
+
+function formatSmallNum(value) {
+  if (!Number.isFinite(value) || value <= 0) return '--';
+  if (value >= 0.001) return value.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 6 });
+  const exp = Math.floor(Math.log10(value));
+  let digits = Math.round(value / 10 ** (exp - 3));
+  let e = exp;
+  if (digits >= 10000) {
+    digits = Math.round(digits / 10);
+    e += 1;
+  }
+  return `0.0${toSubscript(-e - 1)}${digits}`;
+}
+
 function formatPrice(value) {
   if (!Number.isFinite(value) || value <= 0) return '--';
   if (value >= 1) return `$${value.toLocaleString('en-US', { maximumFractionDigits: 4 })}`;
   if (value >= 0.01) return `$${value.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 6 })}`;
-  return `$${value.toLocaleString('en-US', { minimumFractionDigits: 6, maximumFractionDigits: 10 })}`;
+  return `$${formatSmallNum(value)}`;
 }
 
 function formatChange(value) {
@@ -85,7 +117,7 @@ function formatUsdValue(value) {
   if (!Number.isFinite(value) || value <= 0) return '--';
   return value >= 1
     ? `≈ $${value.toLocaleString('en-US', { maximumFractionDigits: 2 })}`
-    : `≈ $${value.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 6 })}`;
+    : `≈ $${formatSmallNum(value)}`;
 }
 
 function formatInputAmount(value) {
@@ -480,7 +512,7 @@ function AppShell() {
       <Routes>
         <Route path="/" element={<Navigate to="/swap" replace />} />
         <Route path="/swap" element={<SwapPage connected={connected} onConnect={() => setWalletOpen(true)} showToast={showToast} market={market} walletBalance={walletBalance} bnbBalance={bnbBalance} bnbUsdPrice={bnbUsdPrice} token={token}/>} />
-        <Route path="/staking" element={<StakingPage connected={connected} onConnect={() => setWalletOpen(true)} showToast={showToast} token={token}/>} />
+        <Route path="/staking" element={<StakingPage connected={connected} account={account} onConnect={() => setWalletOpen(true)} showToast={showToast} token={token}/>} />
         <Route path="/roadmap" element={<RoadmapPage/>} />
         <Route path="/dashboard" element={<DashboardPage market={market} token={token}/>} />
         <Route path="/about" element={<AboutPage token={token}/>} />
@@ -656,25 +688,140 @@ function TokenInput({ label, token, value, setValue, readonly, balance, balanceV
 }
 function TokenLogo({token}) { return <span className={`token-logo ${token.toLowerCase()}`}><img src={token === 'BNB' ? BNB_ICON_URL : TOKEN_ICON_URL} alt={token} /></span> }
 
-function StakingPage({connected,onConnect,showToast,token}) {
-  const [period,setPeriod]=useState(90); const [amount,setAmount]=useState('');
-  const weights={30:'1.0×',90:'1.6×',180:'2.4×'}; const apys={30:'36.8%',90:'58.2%',180:'87.6%'};
+function StakingPage({connected,account,onConnect,showToast,token}) {
+  const [period,setPeriod]=useState(90);
+  const [amount,setAmount]=useState('');
+  const [referrer,setReferrer]=useState(() => new URLSearchParams(window.location.search).get('referrer') || '');
+  const [data,setData]=useState({balance:null,tvl:null,min:null,orders:[],totalOrders:0,boundReferrer:ZeroAddress,decimals:18});
+  const [rates,setRates]=useState(null);
+  const [busy,setBusy]=useState('');
+  const [refresh,setRefresh]=useState(0);
+  const configured=/^0x[a-fA-F0-9]{40}$/.test(STAKING_ADDRESS);
+
+  useEffect(()=>{
+    if(!configured)return;
+    let cancelled=false;
+    const load=async()=>{
+      try{
+        const provider=getReadProvider();
+        const staking=new Contract(STAKING_ADDRESS,STAKING_ABI,provider);
+        const stakeToken=new Contract(TOKEN_ADDRESS,ERC20_ABI,provider);
+        const [decimals,min,tvl,totalOrders]=await Promise.all([stakeToken.decimals(),staking.minStakeAmount(),stakeToken.balanceOf(STAKING_ADDRESS),staking.nextOrderId()]);
+        let balance=null,boundReferrer=ZeroAddress,orders=[];
+        if(account){
+          const [rawBalance,rawReferrer,ids]=await Promise.all([stakeToken.balanceOf(account),staking.referrerOf(account),staking.getUserOrderIds(account)]);
+          balance=Number(formatUnits(rawBalance,decimals));
+          boundReferrer=rawReferrer;
+          orders=await Promise.all([...ids].reverse().map(async id=>{
+            const [order,pending]=await Promise.all([staking.orders(id),staking.pendingInterest(id)]);
+            return {
+              id:Number(id),amount:Number(formatUnits(order.amount,decimals)),
+              startTime:Number(order.startTime),durationDays:Number(order.durationDays),
+              pending:Number(formatUnits(pending.amount,decimals)),
+              claimablePeriods:Number(pending.claimablePeriods),unstaked:order.unstaked
+            };
+          }));
+        }
+        if(!cancelled)setData({
+          balance,tvl:Number(formatUnits(tvl,decimals)),min:Number(formatUnits(min,decimals)),
+          orders,totalOrders:Number(totalOrders),boundReferrer,decimals:Number(decimals)
+        });
+      }catch{
+        if(!cancelled)showToast('质押数据读取失败');
+      }
+    };
+    load();
+    return()=>{cancelled=true};
+  },[account,configured,refresh]);
+
+  useEffect(()=>{
+    if(!configured||!amount||Number(amount)<=0){setRates(null);return}
+    const timer=setTimeout(async()=>{
+      try{
+        const staking=new Contract(STAKING_ADDRESS,STAKING_ABI,getReadProvider());
+        const result=await staking.getRatePlan(parseUnits(amount,data.decimals),period);
+        setRates({monthly:Number(result.monthlyInterestBps)});
+      }catch{setRates(null)}
+    },250);
+    return()=>clearTimeout(timer);
+  },[amount,period,data.decimals,configured]);
+
+  const transact=async(type,orderId)=>{
+    if(!connected){onConnect();return}
+    if(!configured){showToast('未配置质押合约地址');return}
+    let stakeValue;
+    if(type==='stake'){
+      try{
+        stakeValue=parseUnits(amount,data.decimals);
+      }catch{
+        showToast('请输入有效的质押数量');
+        return;
+      }
+      if(stakeValue<=0n){showToast('请输入有效的质押数量');return}
+      try{
+        const balance=await new Contract(TOKEN_ADDRESS,ERC20_ABI,getReadProvider()).balanceOf(account);
+        if(balance<stakeValue){showToast('代币余额不足');return}
+      }catch{
+        showToast('代币余额读取失败');
+        return;
+      }
+    }
+    setBusy(`${type}-${orderId||0}`);
+    try{
+      const provider=new BrowserProvider(window.ethereum);
+      const signer=await provider.getSigner();
+      const staking=new Contract(STAKING_ADDRESS,STAKING_ABI,signer);
+      let tx;
+      if(type==='stake'){
+        const tokenContract=new Contract(TOKEN_ADDRESS,ERC20_ABI,signer);
+        if(await tokenContract.allowance(account,STAKING_ADDRESS)<stakeValue){
+          showToast('请确认代币授权');
+          await (await tokenContract.approve(STAKING_ADDRESS,stakeValue)).wait();
+        }
+        const referral=data.boundReferrer!==ZeroAddress?ZeroAddress:(referrer||ZeroAddress);
+        tx=await staking.stake(stakeValue,period,referral);
+      }else{
+        tx=await staking[type==='claim'?'claimInterest':'unstake'](orderId);
+      }
+      await tx.wait();
+      setAmount('');
+      setRefresh(v=>v+1);
+      showToast(type==='stake'?'质押成功':type==='claim'?'收益领取成功':'解押成功');
+    }catch{
+      showToast('交易失败');
+    }finally{
+      setBusy('');
+    }
+  };
+
+  const activeOrders=data.orders.filter(order=>!order.unstaked);
+  const totalStaked=activeOrders.reduce((sum,order)=>sum+order.amount,0);
+  const totalPending=activeOrders.reduce((sum,order)=>sum+order.pending,0);
+  const monthlyRate=rates?`${(rates.monthly/100).toFixed(2)}%`:'--';
+  const totalRate=rates?`${(rates.monthly*period/3000).toFixed(2)}%`:'--';
   return <section className="main-width">
     <PageIntro eyebrow="STAKING / HONEY REWARDS" title="筑巢" accent="分红" subtitle="锁仓共识，共享蜜糖。时间沉淀价值，耐心收获红利。"/>
-    <div className="metrics"><Metric label="总锁仓量 TVL" value="12,846,320" unit={token.symbol} trend="+8.2%"/><Metric label="当前年化 APY" value={apys[period]} unit="" trend="动态收益"/><Metric label="累计释放分红" value="286.42" unit="BNB" trend="链上可查"/></div>
+    <div className="metrics"><Metric label="总锁仓量 TVL" value={data.tvl===null?'--':formatTokenAmount(data.tvl,2)} unit={token.symbol} trend="链上实时"/><Metric label="最低质押" value={data.min===null?'--':formatTokenAmount(data.min,0)} unit={token.symbol} trend="合约参数"/><Metric label="累计订单" value={data.totalOrders} unit="笔" trend="链上可查"/></div>
     <div className="staking-grid">
       <div className="panel stake-panel"><div className="panel-head"><div><small>BUILD YOUR HIVE</small><h2>开始筑巢</h2></div><div className="status-chip"><i/> CONTRACT ACTIVE</div></div>
-        <div className="stake-label"><span>锁仓数量</span><span>钱包余额：-- {token.symbol}</span></div>
-        <div className="stake-input"><input value={amount} onChange={e=>setAmount(e.target.value.replace(/[^0-9.]/g,''))} placeholder="输入数量"/><div><TokenLogo token={token.symbol}/><b>{token.symbol}</b></div><button onClick={()=>setAmount('10000')}>MAX</button></div>
-        <div className="period-title"><span>选择锁仓周期</span><small>周期越长，权重越高</small></div>
-        <div className="period-grid">{[30,90,180].map(p=><button key={p} onClick={()=>setPeriod(p)} className={period===p?'active':''}><span>{p} 天</span><small>{weights[p]} 权重</small>{period===p&&<Check size={14}/>}</button>)}</div>
-        <div className="estimate"><div><span>预计年化收益</span><b>{apys[period]}</b></div><div><span>权重倍数</span><b>{weights[period]}</b></div><div><span>预计解锁时间</span><b>{new Date(Date.now()+period*86400000).toLocaleDateString('zh-CN')}</b></div></div>
-        <button className="primary-action" disabled>未开启<LockKeyhole size={18}/></button>
+        <div className="stake-label"><span>锁仓数量</span><span>钱包余额：{data.balance===null?'--':formatTokenAmount(data.balance,2)} {token.symbol}</span></div>
+        <div className="stake-input"><input value={amount} onChange={e=>setAmount(e.target.value.replace(/[^0-9.]/g,''))} placeholder="输入数量"/><div><TokenLogo token={token.symbol}/><b>{token.symbol}</b></div><button onClick={()=>setAmount(data.balance===null?'':formatInputAmount(data.balance))}>MAX</button></div>
+        {data.boundReferrer===ZeroAddress&&<div className="referrer-input"><span>推荐人（选填）</span><input value={referrer} onChange={e=>setReferrer(e.target.value.trim())} placeholder="0x..."/></div>}
+        <div className="period-title"><span>选择锁仓周期</span><small>每 10 天可领取一期收益</small></div>
+        <div className="period-grid">{[30,60,90,180].map(p=><button key={p} onClick={()=>setPeriod(p)} className={period===p?'active':''}><span>{p} 天</span><small>{p/10} 期</small>{period===p&&<Check size={14}/>}</button>)}</div>
+        <div className="estimate"><div><span>月利率</span><b>{monthlyRate}</b></div><div><span>周期总收益率</span><b>{totalRate}</b></div><div><span>预计解锁时间</span><b>{new Date(Date.now()+period*86400000).toLocaleDateString('zh-CN')}</b></div></div>
+        <button className="primary-action" onClick={()=>transact('stake')} disabled={Boolean(busy)||(connected&&!amount)}>{busy.startsWith('stake')?'处理中...':connected?'确认质押':'连接钱包开始质押'}<LockKeyhole size={18}/></button>
       </div>
-      <div className="panel position-panel"><div className="panel-head"><div><small>MY POSITION</small><h2>我的蜂巢</h2></div><span className="hex-number">01</span></div>
-        <div className="empty-position"><div className="empty-hive"><Hexagon/><LockKeyhole/></div><h3>尚未建立蜂巢</h3><p>锁仓 {token.symbol} 后，你的仓位与实时收益将在这里展示。</p></div>
-        <div className="position-data"><div><span>我的质押</span><b>-- {token.symbol}</b></div><div><span>待领取收益</span><b className="gold">-- BNB</b></div></div>
-        <div className="dual-actions"><button disabled>解除锁仓</button><button disabled>领取收益</button></div>
+      <div className="panel position-panel"><div className="panel-head"><div><small>MY POSITION</small><h2>我的蜂巢</h2></div><span className="hex-number">{String(activeOrders.length).padStart(2,'0')}</span></div>
+        {data.orders.length===0?<div className="empty-position"><div className="empty-hive"><Hexagon/><LockKeyhole/></div><h3>尚未建立蜂巢</h3><p>锁仓 {token.symbol} 后，你的仓位与实时收益将在这里展示。</p></div>:<div className="order-list">{data.orders.map(order=>{
+          const matured=Date.now()/1000>=order.startTime+order.durationDays*86400;
+          return <div className={`stake-order ${order.unstaked?'closed':''}`} key={order.id}>
+            <div className="order-head"><b>#{order.id} · {order.durationDays} 天</b><span>{order.unstaked?'已解押':matured?'已到期':'质押中'}</span></div>
+            <div className="order-values"><span>本金 <b>{formatTokenAmount(order.amount,2)}</b></span><span>待领取 <b>{formatTokenAmount(order.pending,2)}</b></span></div>
+            {!order.unstaked&&<div className="dual-actions"><button onClick={()=>transact('unstake',order.id)} disabled={!matured||Boolean(busy)}>{busy===`unstake-${order.id}`?'处理中...':'到期解押'}</button><button onClick={()=>transact('claim',order.id)} disabled={!order.claimablePeriods||Boolean(busy)}>{busy===`claim-${order.id}`?'处理中...':`领取收益 (${order.claimablePeriods}期)`}</button></div>}
+          </div>
+        })}</div>}
+        <div className="position-data"><div><span>我的质押</span><b>{formatTokenAmount(totalStaked,2)} {token.symbol}</b></div><div><span>待领取收益</span><b className="gold">{formatTokenAmount(totalPending,2)} {token.symbol}</b></div></div>
         <div className="reward-note"><Sparkles size={16}/><p>分红池由链上生态收益自动注入<br/><b>真实 · 透明 · 可验证</b></p></div>
       </div>
     </div>
@@ -726,6 +873,11 @@ function TradingViewChart({ data }) {
       wickUpColor: '#72d49b',
       wickDownColor: '#ee7c78',
       borderVisible: false,
+      priceFormat: {
+        type: 'custom',
+        minMove: 1e-12,
+        formatter: price => (price > 0 ? formatSmallNum(price) : ''),
+      },
     });
 
     const volumeSeries = chart.addSeries(HistogramSeries, {
