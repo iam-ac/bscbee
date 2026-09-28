@@ -883,7 +883,7 @@ function StakingPage({connected,account,onConnect,showToast,token}) {
         {data.orders.length===0?<div className="empty-position"><div className="empty-hive"><Hexagon/><LockKeyhole/></div><h3>尚未建立蜂巢</h3><p>锁仓 {token.symbol} 后，你的仓位与实时收益将在这里展示。</p></div>:<div className="order-list">{data.orders.map(order=>{
           const matured=Date.now()/1000>=order.startTime+order.durationDays*86400;
           return <div className={`stake-order ${order.unstaked?'closed':''}`} key={order.id}>
-            <div className="order-head"><b>#{order.id} · {order.durationDays} 天</b><span>{order.unstaked?'已解押':matured?'已到期':'质押中'}</span></div>
+            <div className="order-head"><b>{order.durationDays} 天</b><span>{order.unstaked?'已解押':matured?'已到期':'质押中'}</span></div>
             <div className="order-values"><span>本金 <b>{formatTokenAmount(order.amount,2)}</b></span><span>待领取 <b>{formatTokenAmount(order.pending,2)}</b></span></div>
             {!order.unstaked&&<div className="dual-actions"><button onClick={()=>transact('unstake',order.id)} disabled={!matured||Boolean(busy)}>{busy===`unstake-${order.id}`?'处理中...':'到期解押'}</button><button onClick={()=>transact('claim',order.id)} disabled={!order.claimablePeriods||Boolean(busy)}>{busy===`claim-${order.id}`?'处理中...':`领取收益 (${order.claimablePeriods}期)`}</button></div>}
           </div>
