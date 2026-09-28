@@ -72,8 +72,9 @@ const STAKING_ABI = [
   'error EnforcedPause()',
   'error SafeERC20FailedOperation(address token)',
   'function minStakeAmount() view returns (uint256)',
-  'function nextOrderId() view returns (uint256)',
   'function referrerOf(address) view returns (address)',
+  'function teamVolume(address) view returns (uint256)',
+  'function directTeamCount(address) view returns (uint256)',
   'function getRatePlan(uint256 amount, uint8 durationDays) view returns (uint16 monthlyInterestBps, uint16 directReferralBps, uint16 indirectReferralBps)',
   'function getUserOrderIds(address user) view returns (uint256[])',
   'function orders(uint256) view returns (address user, address directReferrer, address indirectReferrer, uint256 amount, uint256 directRewardAmount, uint256 indirectRewardAmount, uint64 startTime, uint8 durationDays, uint8 totalPeriods, uint8 claimedPeriods, uint16 monthlyInterestBps, uint16 directReferralBps, uint16 indirectReferralBps, bool unstaked)',
@@ -745,7 +746,7 @@ function StakingPage({connected,account,onConnect,showToast,token}) {
   const [period,setPeriod]=useState(180);
   const [amount,setAmount]=useState('');
   const [referrer,setReferrer]=useState(() => new URLSearchParams(window.location.search).get('referrer') || '');
-  const [data,setData]=useState({balance:null,tvl:null,min:null,orders:[],totalOrders:0,boundReferrer:ZeroAddress,decimals:18});
+  const [data,setData]=useState({balance:null,min:null,orders:[],boundReferrer:ZeroAddress,teamVolume:0,directTeamCount:0,decimals:18});
   const [rates,setRates]=useState(null);
   const [busy,setBusy]=useState('');
   const [refresh,setRefresh]=useState(0);
@@ -759,12 +760,14 @@ function StakingPage({connected,account,onConnect,showToast,token}) {
         const provider=getReadProvider();
         const staking=new Contract(STAKING_ADDRESS,STAKING_ABI,provider);
         const stakeToken=new Contract(TOKEN_ADDRESS,ERC20_ABI,provider);
-        const [decimals,min,tvl,totalOrders]=await Promise.all([stakeToken.decimals(),staking.minStakeAmount(),stakeToken.balanceOf(STAKING_ADDRESS),staking.nextOrderId()]);
-        let balance=null,boundReferrer=ZeroAddress,orders=[];
+        const [decimals,min]=await Promise.all([stakeToken.decimals(),staking.minStakeAmount()]);
+        let balance=null,boundReferrer=ZeroAddress,teamVolume=0,directTeamCount=0,orders=[];
         if(account){
-          const [rawBalance,rawReferrer,ids]=await Promise.all([stakeToken.balanceOf(account),staking.referrerOf(account),staking.getUserOrderIds(account)]);
+          const [rawBalance,rawReferrer,rawTeamVolume,rawDirectTeamCount,ids]=await Promise.all([stakeToken.balanceOf(account),staking.referrerOf(account),staking.teamVolume(account),staking.directTeamCount(account),staking.getUserOrderIds(account)]);
           balance=Number(formatUnits(rawBalance,decimals));
           boundReferrer=rawReferrer;
+          teamVolume=Number(formatUnits(rawTeamVolume,decimals));
+          directTeamCount=Number(rawDirectTeamCount);
           orders=await Promise.all([...ids].reverse().map(async id=>{
             const [order,pending]=await Promise.all([staking.orders(id),staking.pendingInterest(id)]);
             return {
@@ -776,8 +779,8 @@ function StakingPage({connected,account,onConnect,showToast,token}) {
           }));
         }
         if(!cancelled)setData({
-          balance,tvl:Number(formatUnits(tvl,decimals)),min:Number(formatUnits(min,decimals)),
-          orders,totalOrders:Number(totalOrders),boundReferrer,decimals:Number(decimals)
+          balance,min:Number(formatUnits(min,decimals)),
+          orders,boundReferrer,teamVolume,directTeamCount,decimals:Number(decimals)
         });
       }catch{
         if(!cancelled)showToast('质押数据读取失败');
@@ -865,7 +868,7 @@ function StakingPage({connected,account,onConnect,showToast,token}) {
   };
   return <section className="main-width">
     <PageIntro eyebrow="STAKING / HONEY REWARDS" title="筑巢" accent="分红" subtitle="锁仓共识，共享蜜糖。时间沉淀价值，耐心收获红利。"/>
-    <div className="metrics"><Metric label="总锁仓量 TVL" value={data.tvl===null?'--':formatTokenAmount(data.tvl,2)} unit={token.symbol} trend="链上实时"/><Metric label="最低质押" value={data.min===null?'--':formatTokenAmount(data.min,0)} unit={token.symbol} trend="合约参数"/><Metric label="累计订单" value={data.totalOrders} unit="笔" trend="链上可查"/></div>
+    <div className="metrics"><Metric label="我的团队业绩" value={connected?formatTokenAmount(data.teamVolume,2):'--'} unit={token.symbol} trend="链上实时"/><Metric label="最低质押" value={data.min===null?'--':formatTokenAmount(data.min,0)} unit={token.symbol} trend="合约参数"/><Metric label="我的直推人数" value={connected?data.directTeamCount:'--'} unit="人" trend="链上实时"/></div>
     <div className="staking-grid">
       <div className="panel stake-panel"><div className="panel-head"><div><small>BUILD YOUR HIVE</small><h2>开始筑巢</h2></div><div className="status-chip"><i/> CONTRACT ACTIVE</div></div>
         <div className="stake-label"><span>锁仓数量</span><span>钱包余额：{data.balance===null?'--':formatTokenAmount(data.balance,2)} {token.symbol}</span></div>
@@ -876,7 +879,7 @@ function StakingPage({connected,account,onConnect,showToast,token}) {
         <div className="estimate"><div><span>月利率</span><b>{monthlyRate}</b></div><div><span>周期总收益率</span><b>{totalRate}</b></div><div><span>预计解锁时间</span><b>{new Date(Date.now()+period*86400000).toLocaleDateString('zh-CN')}</b></div></div>
         <button className="primary-action" onClick={()=>transact('stake')} disabled={Boolean(busy)||(connected&&!amount)}>{busy.startsWith('stake')?'处理中...':connected?'确认质押':'连接钱包开始质押'}<LockKeyhole size={18}/></button>
       </div>
-      <div className="panel position-panel"><div className="panel-head"><div><small>MY POSITION</small><h2>我的蜂巢</h2></div><span className="hex-number">{String(activeOrders.length).padStart(2,'0')}</span></div>
+      <div className="panel position-panel"><div className="panel-head"><div><small>MY POSITION</small><h2>我的蜂巢</h2></div></div>
         {data.orders.length===0?<div className="empty-position"><div className="empty-hive"><Hexagon/><LockKeyhole/></div><h3>尚未建立蜂巢</h3><p>锁仓 {token.symbol} 后，你的仓位与实时收益将在这里展示。</p></div>:<div className="order-list">{data.orders.map(order=>{
           const matured=Date.now()/1000>=order.startTime+order.durationDays*86400;
           return <div className={`stake-order ${order.unstaked?'closed':''}`} key={order.id}>
