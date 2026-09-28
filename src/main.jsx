@@ -442,8 +442,7 @@ function useDashboardLiveData(pairAddress, tokenSymbol, timeframe) {
 
 function BrandMark({ small = false }) {
   return <div className={`brand-mark ${small ? 'small' : ''}`} aria-label="小蜜蜂">
-    <Hexagon className="mark-outline" />
-    <div className="bee-glyph"><span className="wing left"/><span className="wing right"/><span className="bee-body"/></div>
+    <img src={TOKEN_ICON_URL} alt="小蜜蜂币 Logo" />
   </div>;
 }
 
