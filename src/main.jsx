@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { AbiCoder, BrowserProvider, Contract, Interface, JsonRpcProvider, MaxUint256, ZeroAddress, formatEther, formatUnits, parseEther, parseUnits } from 'ethers';
 import './styles.css';
+import TOKEN_ICON_URL from './assets/logo.jpg';
 
 const navItems = [
   { id: 'swap', path: '/swap', label: '交易兑换', en: 'SWAP' },
@@ -25,7 +26,6 @@ const wallets = [
 ];
 
 const TOKEN_ADDRESS = '0x20d375b3fafa56cdb872330450ce0ede88bc7777';
-const TOKEN_ICON_URL = 'https://www.iconaves.com/token_icon_request/6aaff2fc5b723b1c00592f44_1789915900.png';
 const BNB_ICON_URL = 'https://assets-cdn.trustwallet.com/blockchains/smartchain/info/logo.png';
 const ROUTER_ADDRESS = '0xFaC8034Dbc0934F9ED07C642EC7C49a98644d765';
 const STAKING_ADDRESS = import.meta.env.VITE_STAKING_ADDRESS || '0xa4274465b7970951070205E753abBE6668888888';
