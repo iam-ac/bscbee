@@ -7,7 +7,7 @@ import {
   CircleHelp, Copy, ExternalLink, Gauge, Hexagon, Info, LockKeyhole, Menu,
   Network, RefreshCw, Settings2, ShieldCheck, Sparkles, Wallet, X, Zap
 } from 'lucide-react';
-import { AbiCoder, BrowserProvider, Contract, JsonRpcProvider, MaxUint256, ZeroAddress, formatEther, formatUnits, parseEther, parseUnits } from 'ethers';
+import { AbiCoder, BrowserProvider, Contract, Interface, JsonRpcProvider, MaxUint256, ZeroAddress, formatEther, formatUnits, parseEther, parseUnits } from 'ethers';
 import './styles.css';
 
 const navItems = [
@@ -56,6 +56,21 @@ const ROUTER_ABI = [
   'function execute(bytes commands, bytes[] inputs, uint256 deadline, address outputToken, uint256 amountOutMinimum) payable returns (uint256 amountOut)',
 ];
 const STAKING_ABI = [
+  'error InvalidAddress()',
+  'error InvalidAmount()',
+  'error InvalidDuration()',
+  'error InvalidReferrer()',
+  'error AlreadyBound()',
+  'error BindAfterStake()',
+  'error NotOrderOwner()',
+  'error OrderClosed()',
+  'error NothingToClaim()',
+  'error StillLocked()',
+  'error InvalidThreshold()',
+  'error NotCommunity()',
+  'error ReentrantCall()',
+  'error EnforcedPause()',
+  'error SafeERC20FailedOperation(address token)',
   'function minStakeAmount() view returns (uint256)',
   'function nextOrderId() view returns (uint256)',
   'function referrerOf(address) view returns (address)',
@@ -67,7 +82,45 @@ const STAKING_ABI = [
   'function claimInterest(uint256 orderId)',
   'function unstake(uint256 orderId)',
 ];
+const stakingInterface = new Interface(STAKING_ABI);
+const STAKING_ERROR_MESSAGES = {
+  InvalidAddress: '地址无效',
+  InvalidAmount: '金额无效或低于最低质押金额',
+  InvalidDuration: '锁仓周期无效',
+  InvalidReferrer: '推荐人无效',
+  AlreadyBound: '已经绑定推荐人',
+  BindAfterStake: '质押后不能绑定推荐人',
+  NotOrderOwner: '不是该订单的所有者',
+  OrderClosed: '订单已经结束',
+  NothingToClaim: '暂无可领取收益',
+  StillLocked: '质押尚未到期',
+  InvalidThreshold: '档位金额设置无效',
+  NotCommunity: '该地址不是社区',
+  ReentrantCall: '操作正在处理中，请勿重复提交',
+  EnforcedPause: '合约已暂停',
+  SafeERC20FailedOperation: '代币操作失败',
+};
 const abiCoder = AbiCoder.defaultAbiCoder();
+
+function getStakingErrorMessage(error) {
+  if (error?.code === 'ACTION_REJECTED') return '已取消交易';
+  if (error?.code === 'INSUFFICIENT_FUNDS') return 'BNB 余额不足，无法支付 Gas';
+  let errorName = error?.revert?.name;
+  const rawErrorData = error?.data || error?.info?.error?.data || error?.error?.data;
+  const errorData = typeof rawErrorData === 'string' ? rawErrorData : rawErrorData?.data || rawErrorData?.result;
+  if (!errorName && typeof errorData === 'string') {
+    try {
+      errorName = stakingInterface.parseError(errorData)?.name;
+    } catch {
+      errorName = '';
+    }
+  }
+  if (STAKING_ERROR_MESSAGES[errorName]) return STAKING_ERROR_MESSAGES[errorName];
+  const message = `${error?.shortMessage || ''} ${error?.message || ''}`.toLowerCase();
+  if (message.includes('user rejected') || message.includes('user denied')) return '已取消交易';
+  if (message.includes('insufficient funds')) return 'BNB 余额不足，无法支付 Gas';
+  return '交易失败，请稍后重试';
+}
 
 function getReadProvider() {
   return new JsonRpcProvider(BSC_PARAMS.rpcUrls[0]);
@@ -787,8 +840,8 @@ function StakingPage({connected,account,onConnect,showToast,token}) {
       setAmount('');
       setRefresh(v=>v+1);
       showToast(type==='stake'?'质押成功':type==='claim'?'收益领取成功':'解押成功');
-    }catch{
-      showToast('交易失败');
+    }catch(error){
+      showToast(getStakingErrorMessage(error));
     }finally{
       setBusy('');
     }
