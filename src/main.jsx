@@ -742,7 +742,7 @@ function TokenInput({ label, token, value, setValue, readonly, balance, balanceV
 function TokenLogo({token}) { return <span className={`token-logo ${token.toLowerCase()}`}><img src={token === 'BNB' ? BNB_ICON_URL : TOKEN_ICON_URL} alt={token} /></span> }
 
 function StakingPage({connected,account,onConnect,showToast,token}) {
-  const [period,setPeriod]=useState(90);
+  const [period,setPeriod]=useState(180);
   const [amount,setAmount]=useState('');
   const [referrer,setReferrer]=useState(() => new URLSearchParams(window.location.search).get('referrer') || '');
   const [data,setData]=useState({balance:null,tvl:null,min:null,orders:[],totalOrders:0,boundReferrer:ZeroAddress,decimals:18});
@@ -852,6 +852,15 @@ function StakingPage({connected,account,onConnect,showToast,token}) {
   const totalPending=activeOrders.reduce((sum,order)=>sum+order.pending,0);
   const monthlyRate=rates?`${(rates.monthly/100).toFixed(2)}%`:'--';
   const totalRate=rates?`${(rates.monthly*period/3000).toFixed(2)}%`:'--';
+  const inviteLink=account?`${window.location.origin}/staking?referrer=${account}`:'';
+  const copyInviteLink=async()=>{
+    try{
+      await navigator.clipboard.writeText(inviteLink);
+      showToast('邀请链接已复制');
+    }catch{
+      showToast('邀请链接复制失败');
+    }
+  };
   return <section className="main-width">
     <PageIntro eyebrow="STAKING / HONEY REWARDS" title="筑巢" accent="分红" subtitle="锁仓共识，共享蜜糖。时间沉淀价值，耐心收获红利。"/>
     <div className="metrics"><Metric label="总锁仓量 TVL" value={data.tvl===null?'--':formatTokenAmount(data.tvl,2)} unit={token.symbol} trend="链上实时"/><Metric label="最低质押" value={data.min===null?'--':formatTokenAmount(data.min,0)} unit={token.symbol} trend="合约参数"/><Metric label="累计订单" value={data.totalOrders} unit="笔" trend="链上可查"/></div>
@@ -875,6 +884,7 @@ function StakingPage({connected,account,onConnect,showToast,token}) {
           </div>
         })}</div>}
         <div className="position-data"><div><span>我的质押</span><b>{formatTokenAmount(totalStaked,2)} {token.symbol}</b></div><div><span>待领取收益</span><b className="gold">{formatTokenAmount(totalPending,2)} {token.symbol}</b></div></div>
+        {connected&&data.orders.length>0&&<div className="invite-link"><span>我的邀请链接</span><div><input value={inviteLink} readOnly/><button onClick={copyInviteLink}><Copy size={14}/>复制</button></div></div>}
         <div className="reward-note"><Sparkles size={16}/><p>分红池由链上生态收益自动注入<br/><b>真实 · 透明 · 可验证</b></p></div>
       </div>
     </div>
