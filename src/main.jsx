@@ -74,6 +74,7 @@ const STAKING_ABI = [
   'function minStakeAmount() view returns (uint256)',
   'function referrerOf(address) view returns (address)',
   'function teamVolume(address) view returns (uint256)',
+  'function getTeamVolumeByDuration(address account) view returns (uint256[4] volumes)',
   'function directTeamCount(address) view returns (uint256)',
   'function getRatePlan(uint256 amount, uint8 durationDays) view returns (uint16 monthlyInterestBps, uint16 directReferralBps, uint16 indirectReferralBps)',
   'function getUserOrderIds(address user) view returns (uint256[])',
@@ -745,7 +746,7 @@ function StakingPage({connected,account,onConnect,showToast,token}) {
   const [period,setPeriod]=useState(180);
   const [amount,setAmount]=useState('');
   const [referrer,setReferrer]=useState(() => new URLSearchParams(window.location.search).get('referrer') || '');
-  const [data,setData]=useState({balance:null,min:null,orders:[],boundReferrer:ZeroAddress,teamVolume:0,directTeamCount:0,decimals:18});
+  const [data,setData]=useState({balance:null,min:null,orders:[],boundReferrer:ZeroAddress,teamVolume:0,teamVolumes:[0,0,0,0],directTeamCount:0,decimals:18});
   const [rates,setRates]=useState(null);
   const [busy,setBusy]=useState('');
   const [refresh,setRefresh]=useState(0);
@@ -760,12 +761,13 @@ function StakingPage({connected,account,onConnect,showToast,token}) {
         const staking=new Contract(STAKING_ADDRESS,STAKING_ABI,provider);
         const stakeToken=new Contract(TOKEN_ADDRESS,ERC20_ABI,provider);
         const [decimals,min]=await Promise.all([stakeToken.decimals(),staking.minStakeAmount()]);
-        let balance=null,boundReferrer=ZeroAddress,teamVolume=0,directTeamCount=0,orders=[];
+        let balance=null,boundReferrer=ZeroAddress,teamVolume=0,teamVolumes=[0,0,0,0],directTeamCount=0,orders=[];
         if(account){
-          const [rawBalance,rawReferrer,rawTeamVolume,rawDirectTeamCount,ids]=await Promise.all([stakeToken.balanceOf(account),staking.referrerOf(account),staking.teamVolume(account),staking.directTeamCount(account),staking.getUserOrderIds(account)]);
+          const [rawBalance,rawReferrer,rawTeamVolume,rawTeamVolumes,rawDirectTeamCount,ids]=await Promise.all([stakeToken.balanceOf(account),staking.referrerOf(account),staking.teamVolume(account),staking.getTeamVolumeByDuration(account),staking.directTeamCount(account),staking.getUserOrderIds(account)]);
           balance=Number(formatUnits(rawBalance,decimals));
           boundReferrer=rawReferrer;
           teamVolume=Number(formatUnits(rawTeamVolume,decimals));
+          teamVolumes=rawTeamVolumes.map(v=>Number(formatUnits(v,decimals)));
           directTeamCount=Number(rawDirectTeamCount);
           orders=await Promise.all([...ids].reverse().map(async id=>{
             const [order,pending]=await Promise.all([staking.orders(id),staking.pendingInterest(id)]);
@@ -779,7 +781,7 @@ function StakingPage({connected,account,onConnect,showToast,token}) {
         }
         if(!cancelled)setData({
           balance,min:Number(formatUnits(min,decimals)),
-          orders,boundReferrer,teamVolume,directTeamCount,decimals:Number(decimals)
+          orders,boundReferrer,teamVolume,teamVolumes,directTeamCount,decimals:Number(decimals)
         });
       }catch{
         if(!cancelled)showToast('质押数据读取失败');
@@ -867,6 +869,7 @@ function StakingPage({connected,account,onConnect,showToast,token}) {
   };
   return <section className="main-width">
     <PageIntro eyebrow="STAKING / HONEY REWARDS" title="筑巢" accent="分红" subtitle="锁仓共识，共享蜜糖。时间沉淀价值，耐心收获红利。"/>
+    <div className="metrics four">{[30,60,90,180].map((p,i)=><Metric key={p} label={`${p} 天锁仓业绩`} value={connected?formatTokenAmount(data.teamVolumes[i],2):'--'} unit={token.symbol} trend="链上实时"/>)}</div>
     <div className="metrics"><Metric label="我的团队业绩" value={connected?formatTokenAmount(data.teamVolume,2):'--'} unit={token.symbol} trend="链上实时"/><Metric label="最低质押" value={data.min===null?'--':formatTokenAmount(data.min,0)} unit={token.symbol} trend="合约参数"/><Metric label="我的直推人数" value={connected?data.directTeamCount:'--'} unit="人" trend="链上实时"/></div>
     <div className="staking-grid">
       <div className="panel stake-panel"><div className="panel-head"><div><small>BUILD YOUR HIVE</small><h2>开始筑巢</h2></div><div className="status-chip"><i/> CONTRACT ACTIVE</div></div>

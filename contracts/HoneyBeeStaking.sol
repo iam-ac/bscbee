@@ -60,6 +60,7 @@ contract HoneyBeeStaking is Initializable, OwnableUpgradeable, PausableUpgradeab
     address[] private _communities;
     mapping(address => uint256) private _communityIndex;
     uint256 private _reentrancyStatus;
+    mapping(address => mapping(uint8 => uint256)) private _teamVolumeByDuration;
 
     modifier nonReentrant() {
         if (_reentrancyStatus == 2) revert ReentrantCall();
@@ -125,7 +126,7 @@ contract HoneyBeeStaking is Initializable, OwnableUpgradeable, PausableUpgradeab
         stakeToken.safeTransferFrom(msg.sender, address(this), requestedAmount);
         uint256 actualAmount = stakeToken.balanceOf(address(this)) - balanceBefore;
         if (actualAmount < minStakeAmount) revert InvalidAmount();
-        _trackTeam(actualAmount);
+        _trackTeam(actualAmount, durationDays);
 
         (uint8 totalPeriods, uint16 monthlyInterestBps, uint16 directReferralBps, uint16 indirectReferralBps) = _resolveRates(
             actualAmount,
@@ -231,6 +232,13 @@ contract HoneyBeeStaking is Initializable, OwnableUpgradeable, PausableUpgradeab
         return _userOrderIds[user];
     }
 
+    function getTeamVolumeByDuration(address account) external view returns (uint256[4] memory volumes) {
+        volumes[0] = _teamVolumeByDuration[account][30];
+        volumes[1] = _teamVolumeByDuration[account][60];
+        volumes[2] = _teamVolumeByDuration[account][90];
+        volumes[3] = _teamVolumeByDuration[account][180];
+    }
+
     function getRatePlan(uint256 amount, uint8 durationDays) external view returns (uint16 monthlyInterestBps, uint16 directReferralBps, uint16 indirectReferralBps) {
         (, monthlyInterestBps, directReferralBps, indirectReferralBps) = _resolveRates(amount, durationDays);
     }
@@ -248,6 +256,10 @@ contract HoneyBeeStaking is Initializable, OwnableUpgradeable, PausableUpgradeab
             address current = referrerOf[account];
             while (current != address(0)) {
                 teamVolume[current] -= volume;
+                _teamVolumeByDuration[current][30] -= _teamVolumeByDuration[account][30];
+                _teamVolumeByDuration[current][60] -= _teamVolumeByDuration[account][60];
+                _teamVolumeByDuration[current][90] -= _teamVolumeByDuration[account][90];
+                _teamVolumeByDuration[current][180] -= _teamVolumeByDuration[account][180];
                 if (isCommunity[current]) break;
                 current = referrerOf[current];
             }
@@ -280,10 +292,11 @@ contract HoneyBeeStaking is Initializable, OwnableUpgradeable, PausableUpgradeab
         emit CommunityReceiverUpdated(community, receiver);
     }
 
-    function _trackTeam(uint256 amount) internal {
+    function _trackTeam(uint256 amount, uint8 durationDays) internal {
         address current = msg.sender;
         while (current != address(0)) {
             teamVolume[current] += amount;
+            _teamVolumeByDuration[current][durationDays] += amount;
             if (isCommunity[current]) break;
             current = referrerOf[current];
         }
