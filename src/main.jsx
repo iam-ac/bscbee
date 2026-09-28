@@ -852,6 +852,8 @@ function StakingPage({connected,account,onConnect,showToast,token}) {
   const totalPending=activeOrders.reduce((sum,order)=>sum+order.pending,0);
   const monthlyRate=rates?`${(rates.monthly/100).toFixed(2)}%`:'--';
   const totalRate=rates?`${(rates.monthly*period/3000).toFixed(2)}%`:'--';
+  const referrerLocked=data.boundReferrer!==ZeroAddress||data.orders.length>0;
+  const displayedReferrer=data.boundReferrer!==ZeroAddress?data.boundReferrer:referrerLocked?'未绑定':referrer;
   const inviteLink=account?`${window.location.origin}/staking?referrer=${account}`:'';
   const copyInviteLink=async()=>{
     try{
@@ -868,7 +870,7 @@ function StakingPage({connected,account,onConnect,showToast,token}) {
       <div className="panel stake-panel"><div className="panel-head"><div><small>BUILD YOUR HIVE</small><h2>开始筑巢</h2></div><div className="status-chip"><i/> CONTRACT ACTIVE</div></div>
         <div className="stake-label"><span>锁仓数量</span><span>钱包余额：{data.balance===null?'--':formatTokenAmount(data.balance,2)} {token.symbol}</span></div>
         <div className="stake-input"><input value={amount} onChange={e=>setAmount(e.target.value.replace(/[^0-9.]/g,''))} placeholder="输入数量"/><div><TokenLogo token={token.symbol}/><b>{token.symbol}</b></div><button onClick={()=>setAmount(data.balance===null?'':formatInputAmount(data.balance))}>MAX</button></div>
-        {data.boundReferrer===ZeroAddress&&<div className="referrer-input"><span>推荐人（选填）</span><input value={referrer} onChange={e=>setReferrer(e.target.value.trim())} placeholder="0x..."/></div>}
+        <div className="referrer-input"><span>{referrerLocked?'推荐人':'推荐人（选填）'}</span><input value={displayedReferrer} readOnly={referrerLocked} onChange={e=>setReferrer(e.target.value.trim())} placeholder="0x..."/></div>
         <div className="period-title"><span>选择锁仓周期</span><small>每 10 天可领取一期收益</small></div>
         <div className="period-grid">{[30,60,90,180].map(p=><button key={p} onClick={()=>setPeriod(p)} className={period===p?'active':''}><span>{p} 天</span><small>{p/10} 期</small>{period===p&&<Check size={14}/>}</button>)}</div>
         <div className="estimate"><div><span>月利率</span><b>{monthlyRate}</b></div><div><span>周期总收益率</span><b>{totalRate}</b></div><div><span>预计解锁时间</span><b>{new Date(Date.now()+period*86400000).toLocaleDateString('zh-CN')}</b></div></div>
