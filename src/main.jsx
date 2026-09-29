@@ -124,8 +124,49 @@ function getStakingErrorMessage(error) {
   return '交易失败，请稍后重试';
 }
 
+const READ_RPC_URLS = [
+  'https://bsc-dataseed1.defibit.io',
+  'https://bsc-dataseed2.defibit.io',
+  'https://bsc-dataseed3.defibit.io',
+  'https://bsc-dataseed4.defibit.io',
+  'https://bsc-dataseed1.ninicoin.io',
+  'https://bsc-dataseed2.ninicoin.io',
+  'https://bsc-dataseed3.ninicoin.io',
+  'https://bsc-dataseed4.ninicoin.io',
+  'https://bsc-dataseed1.bnbchain.org',
+  'https://bsc-dataseed2.bnbchain.org',
+  'https://bsc-dataseed3.bnbchain.org',
+  'https://bsc-dataseed4.bnbchain.org',
+];
+
+function makeRpcProvider(url) {
+  return new JsonRpcProvider(url, undefined, { staticNetwork: true });
+}
+
+let readProvider = makeRpcProvider(READ_RPC_URLS[0]);
+
+function probeRpc(makeProvider) {
+  const provider = makeProvider();
+  const start = performance.now();
+  return provider.send('eth_chainId', []).then(chainId => {
+    if (Number(chainId) !== BSC_CHAIN_ID) throw new Error('wrong chain');
+    return { provider, ms: performance.now() - start };
+  });
+}
+
+Promise.allSettled([
+  ...(window.ethereum ? [() => new BrowserProvider(window.ethereum)] : []),
+  ...READ_RPC_URLS.map(url => () => makeRpcProvider(url)),
+].map(make => Promise.race([
+  probeRpc(make),
+  new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
+]))).then(results => {
+  const best = results.filter(r => r.status === 'fulfilled').sort((a, b) => a.value.ms - b.value.ms)[0];
+  if (best) readProvider = best.value.provider;
+});
+
 function getReadProvider() {
-  return new JsonRpcProvider(BSC_PARAMS.rpcUrls[0]);
+  return readProvider;
 }
 
 function shortAddress(value) {

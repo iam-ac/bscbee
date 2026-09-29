@@ -293,7 +293,7 @@ contract HoneyBeeStaking is Initializable, OwnableUpgradeable, PausableUpgradeab
     }
 
     function _trackTeam(uint256 amount, uint8 durationDays) internal {
-        address current = msg.sender;
+        address current = referrerOf[msg.sender];
         while (current != address(0)) {
             teamVolume[current] += amount;
             _teamVolumeByDuration[current][durationDays] += amount;
