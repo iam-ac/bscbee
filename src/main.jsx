@@ -35,7 +35,7 @@ const ROUTER_RECIPIENT_SENDER = '0x0000000000000000000000000000000000000001';
 const ROUTER_RECIPIENT_ROUTER = '0x0000000000000000000000000000000000000002';
 const BSC_CHAIN_ID = '0x38';
 const BSC_PARAMS = {
-  chainId: BSC_CHAIN_ID,
+  chainId: '0x38',
   chainName: 'BNB Smart Chain',
   nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
   rpcUrls: ['https://bsc-dataseed.binance.org'],
@@ -165,7 +165,7 @@ function probeRpc(makeProvider) {
   const provider = makeProvider();
   const start = performance.now();
   return provider.send('eth_chainId', []).then(chainId => {
-    if (Number(chainId) !== BSC_CHAIN_ID) throw new Error('wrong chain');
+    if (Number(chainId) !== Number(BSC_CHAIN_ID)) throw new Error('wrong chain');
     return { provider, ms: performance.now() - start };
   });
 }
@@ -523,7 +523,7 @@ function AuthGate({ showToast, onAuth }) {
     setBusy(true);
     try {
       try {
-        await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: BSC_CHAIN_ID }] });
+        await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x38' }] });
       } catch (error) {
         if (error?.code === 4902) {
           await window.ethereum.request({ method: 'wallet_addEthereumChain', params: [BSC_PARAMS] });
@@ -538,20 +538,27 @@ function AuthGate({ showToast, onAuth }) {
       const message = `HoneyBee verify:\n${address.toLowerCase()}\n${Math.floor(Date.now() / 1000)}`;
       const signature = await signer.signMessage(message);
       let token = '';
+      let authError = '';
       try {
         const response = await fetch('/.netlify/functions/auth', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ message, signature }),
         });
-        if (response.ok) token = (await response.json()).token;
-      } catch {}
-      if (!token && !import.meta.env.DEV) throw new Error('verify failed');
+        if (response.ok) {
+          token = (await response.json()).token;
+        } else {
+          authError = `验证服务错误(${response.status})`;
+        }
+      } catch {
+        authError = '验证服务不可用';
+      }
+      if (!token && !import.meta.env.DEV) throw new Error(authError || '验证失败，请重试');
       setAuthToken(token);
       pickReadProvider();
       onAuth(address);
     } catch (error) {
-      showToast(error?.code === 'ACTION_REJECTED' ? '已取消签名' : '验证失败，请重试');
+      showToast(error?.code === 'ACTION_REJECTED' ? '已取消签名' : (error?.shortMessage || error?.message || '验证失败，请重试'));
     } finally {
       setBusy(false);
     }
