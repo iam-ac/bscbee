@@ -3,6 +3,18 @@
   publish = "dist"
 
 [[redirects]]
+  from = "/rpc/*"
+  to = "https://bsc-dataseed.binance.org/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/rpc"
+  to = "https://bsc-dataseed.binance.org/"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200

@@ -123,8 +123,10 @@ function getStakingErrorMessage(error) {
   if (message.includes('insufficient funds')) return 'BNB 余额不足，无法支付 Gas';
   return '交易失败，请稍后重试';
 }
-
+console.log(BSC_PARAMS.rpcUrls[0]);
 const READ_RPC_URLS = [
+   BSC_PARAMS.rpcUrls[0],
+  'https://rpc.nodeflare.app/bnb/public',
   'https://bsc-dataseed1.defibit.io',
   'https://bsc-dataseed2.defibit.io',
   'https://bsc-dataseed3.defibit.io',
@@ -139,11 +141,13 @@ const READ_RPC_URLS = [
   'https://bsc-dataseed4.bnbchain.org',
 ];
 
+const DEFAULT_RPC_URL = '/rpc';
+
 function makeRpcProvider(url) {
-  return new JsonRpcProvider(url, undefined, { staticNetwork: true });
+  return new JsonRpcProvider(new URL(url, window.location.origin).href, undefined, { staticNetwork: true });
 }
 
-let readProvider = makeRpcProvider(READ_RPC_URLS[0]);
+let readProvider = makeRpcProvider(DEFAULT_RPC_URL);
 
 function probeRpc(makeProvider) {
   const provider = makeProvider();
@@ -156,7 +160,7 @@ function probeRpc(makeProvider) {
 
 Promise.allSettled([
   ...(window.ethereum ? [() => new BrowserProvider(window.ethereum)] : []),
-  ...READ_RPC_URLS.map(url => () => makeRpcProvider(url)),
+  ...[DEFAULT_RPC_URL, ...READ_RPC_URLS].map(url => () => makeRpcProvider(url)),
 ].map(make => Promise.race([
   probeRpc(make),
   new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
