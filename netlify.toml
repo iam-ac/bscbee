@@ -3,14 +3,8 @@
   publish = "dist"
 
 [[redirects]]
-  from = "/rpc/*"
-  to = "https://bsc-dataseed.binance.org/:splat"
-  status = 200
-  force = true
-
-[[redirects]]
   from = "/rpc"
-  to = "https://bsc-dataseed.binance.org/"
+  to = "/.netlify/functions/rpc"
   status = 200
   force = true
 

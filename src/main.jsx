@@ -7,7 +7,7 @@ import {
   CircleHelp, Copy, ExternalLink, Gauge, Hexagon, Info, LockKeyhole, Menu,
   Network, RefreshCw, Settings2, ShieldCheck, Sparkles, Wallet, X, Zap
 } from 'lucide-react';
-import { AbiCoder, BrowserProvider, Contract, Interface, JsonRpcProvider, MaxUint256, ZeroAddress, formatEther, formatUnits, parseEther, parseUnits } from 'ethers';
+import { AbiCoder, BrowserProvider, Contract, FetchRequest, Interface, JsonRpcProvider, MaxUint256, ZeroAddress, formatEther, formatUnits, parseEther, parseUnits } from 'ethers';
 import './styles.css';
 import TOKEN_ICON_URL from './assets/logo.jpg';
 
@@ -143,8 +143,20 @@ const READ_RPC_URLS = [
 
 const DEFAULT_RPC_URL = '/rpc';
 
+let authToken = '';
+
+function setAuthToken(token) {
+  authToken = token;
+}
+
 function makeRpcProvider(url) {
-  return new JsonRpcProvider(new URL(url, window.location.origin).href, undefined, { staticNetwork: true });
+  const absolute = new URL(url, window.location.origin).href;
+  if (!url.startsWith('http')) {
+    const request = new FetchRequest(absolute);
+    request.setHeader('Authorization', `Bearer ${authToken}`);
+    return new JsonRpcProvider(request, undefined, { staticNetwork: true });
+  }
+  return new JsonRpcProvider(absolute, undefined, { staticNetwork: true });
 }
 
 let readProvider = makeRpcProvider(DEFAULT_RPC_URL);
@@ -158,16 +170,18 @@ function probeRpc(makeProvider) {
   });
 }
 
-Promise.allSettled([
-  ...(window.ethereum ? [() => new BrowserProvider(window.ethereum)] : []),
-  ...[DEFAULT_RPC_URL, ...READ_RPC_URLS].map(url => () => makeRpcProvider(url)),
-].map(make => Promise.race([
-  probeRpc(make),
-  new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
-]))).then(results => {
-  const best = results.filter(r => r.status === 'fulfilled').sort((a, b) => a.value.ms - b.value.ms)[0];
-  if (best) readProvider = best.value.provider;
-});
+function pickReadProvider() {
+  Promise.allSettled([
+    ...(window.ethereum ? [() => new BrowserProvider(window.ethereum)] : []),
+    ...[DEFAULT_RPC_URL, ...READ_RPC_URLS].map(url => () => makeRpcProvider(url)),
+  ].map(make => Promise.race([
+    probeRpc(make),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
+  ]))).then(results => {
+    const best = results.filter(r => r.status === 'fulfilled').sort((a, b) => a.value.ms - b.value.ms)[0];
+    if (best) readProvider = best.value.provider;
+  });
+}
 
 function getReadProvider() {
   return readProvider;
@@ -268,7 +282,7 @@ function buildBuyExecuteParams(amountIn, amountOutMin, deadline) {
   };
 }
 
-function useLiveTokenData(account) {
+function useLiveTokenData(account, authed) {
   const [market, setMarket] = useState({
     tokenName: '',
     tokenSymbol: '',
@@ -286,6 +300,7 @@ function useLiveTokenData(account) {
   const [bnbBalance, setBnbBalance] = useState(null);
 
   useEffect(() => {
+    if (!authed) return;
     let cancelled = false;
 
     const loadMarket = async () => {
@@ -319,9 +334,10 @@ function useLiveTokenData(account) {
       cancelled = true;
       clearInterval(timer);
     };
-  }, []);
+  }, [authed]);
 
   useEffect(() => {
+    if (!authed) return;
     let cancelled = false;
 
     const loadTokenMeta = async () => {
@@ -348,9 +364,10 @@ function useLiveTokenData(account) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authed]);
 
   useEffect(() => {
+    if (!authed) return;
     let cancelled = false;
 
     const loadBalance = async () => {
@@ -391,7 +408,7 @@ function useLiveTokenData(account) {
     return () => {
       cancelled = true;
     };
-  }, [account]);
+  }, [account, authed]);
 
   return { market, walletBalance, bnbBalance };
 }
@@ -496,15 +513,68 @@ function getPageByPath(pathname) {
   return navItems.find(item => item.path === pathname)?.id || 'swap';
 }
 
+function AuthGate({ showToast, onAuth }) {
+  const [busy, setBusy] = useState(false);
+  const verify = async () => {
+    if (!window.ethereum) {
+      showToast('未检测到钱包');
+      return;
+    }
+    setBusy(true);
+    try {
+      try {
+        await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: BSC_CHAIN_ID }] });
+      } catch (error) {
+        if (error?.code === 4902) {
+          await window.ethereum.request({ method: 'wallet_addEthereumChain', params: [BSC_PARAMS] });
+        } else {
+          throw error;
+        }
+      }
+      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+      const address = accounts?.[0];
+      if (!address) throw new Error('no account');
+      const signer = await new BrowserProvider(window.ethereum).getSigner();
+      const message = `HoneyBee verify:\n${address.toLowerCase()}\n${Math.floor(Date.now() / 1000)}`;
+      const signature = await signer.signMessage(message);
+      let token = '';
+      try {
+        const response = await fetch('/.netlify/functions/auth', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ message, signature }),
+        });
+        if (response.ok) token = (await response.json()).token;
+      } catch {}
+      if (!token && !import.meta.env.DEV) throw new Error('verify failed');
+      setAuthToken(token);
+      pickReadProvider();
+      onAuth(address);
+    } catch (error) {
+      showToast(error?.code === 'ACTION_REJECTED' ? '已取消签名' : '验证失败，请重试');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return <div className="modal-backdrop"><div className="wallet-modal">
+    <BrandMark />
+    <div className="modal-head"><div><small>HIVE ACCESS</small><h2>签名验证</h2></div></div>
+    <p>连接钱包并签名，验证通过后才能读取链上数据</p>
+    <button className="primary-action wallet-connect-action" onClick={verify} disabled={busy}>{busy ? '验证中...' : '连接钱包并签名'}<ShieldCheck size={18} /></button>
+    <div className="terms"><ShieldCheck/> 签名免费，不授权任何交易</div>
+  </div></div>;
+}
+
 function AppShell() {
   const [walletOpen, setWalletOpen] = useState(false);
   const [connected, setConnected] = useState(false);
   const [account, setAccount] = useState('');
+  const [authed, setAuthed] = useState(false);
   const [mobile, setMobile] = useState(false);
   const [toast, setToast] = useState('');
   const location = useLocation();
   const routerNavigate = useNavigate();
-  const { market, walletBalance, bnbBalance } = useLiveTokenData(account);
+  const { market, walletBalance, bnbBalance } = useLiveTokenData(account, authed);
   const token = getTokenDisplay(market);
   const bnbUsdPrice = market.priceUsd && market.priceNative ? market.priceUsd / market.priceNative : null;
   const page = getPageByPath(location.pathname);
@@ -608,7 +678,7 @@ function AppShell() {
     </header>
 
     <main key={location.pathname} className="page-enter">
-      <Routes>
+      {authed ? <Routes>
         <Route path="/" element={<Navigate to="/swap" replace />} />
         <Route path="/swap" element={<SwapPage connected={connected} onConnect={() => setWalletOpen(true)} showToast={showToast} market={market} walletBalance={walletBalance} bnbBalance={bnbBalance} bnbUsdPrice={bnbUsdPrice} token={token}/>} />
         <Route path="/staking" element={<StakingPage connected={connected} account={account} onConnect={() => setWalletOpen(true)} showToast={showToast} token={token}/>} />
@@ -616,7 +686,11 @@ function AppShell() {
         <Route path="/dashboard" element={<DashboardPage market={market} token={token}/>} />
         <Route path="/about" element={<AboutPage token={token}/>} />
         <Route path="*" element={<Navigate to="/swap" replace />} />
-      </Routes>
+      </Routes> : <AuthGate showToast={showToast} onAuth={address => {
+        setAccount(address);
+        setConnected(true);
+        setAuthed(true);
+      }} />}
     </main>
 
     <footer><div className="footer-brand"><BrandMark small/><span>{token.name} {token.symbol}</span></div><span>Built on BNB Smart Chain</span><span>© 2026 {token.symbol}</span></footer>
