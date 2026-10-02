@@ -147,13 +147,17 @@ let authToken = '';
 
 function setAuthToken(token) {
   authToken = token;
+  readProvider = makeRpcProvider(DEFAULT_RPC_URL);
 }
 
 function makeRpcProvider(url) {
   const absolute = new URL(url, window.location.origin).href;
   if (!url.startsWith('http')) {
     const request = new FetchRequest(absolute);
-    request.setHeader('Authorization', `Bearer ${authToken}`);
+    request.preflightFunc = async req => {
+      req.setHeader('Authorization', `Bearer ${authToken}`);
+      return req;
+    };
     return new JsonRpcProvider(request, undefined, { staticNetwork: true });
   }
   return new JsonRpcProvider(absolute, undefined, { staticNetwork: true });
