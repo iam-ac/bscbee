@@ -8,6 +8,16 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: path => path.replace(/^\/rpc/, ''),
       },
+      '/api/dexscreener': {
+        target: 'https://api.dexscreener.com',
+        changeOrigin: true,
+        rewrite: path => path.replace(/^\/api\/dexscreener/, ''),
+      },
+      '/api/gecko': {
+        target: 'https://api.geckoterminal.com',
+        changeOrigin: true,
+        rewrite: path => path.replace(/^\/api\/gecko/, ''),
+      },
     },
   },
 });

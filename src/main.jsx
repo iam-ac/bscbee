@@ -305,7 +305,7 @@ function useLiveTokenData(account, authed) {
 
     const loadMarket = async () => {
       try {
-        const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${TOKEN_ADDRESS}`);
+        const response = await fetch(`/api/dexscreener/latest/dex/tokens/${TOKEN_ADDRESS}`);
         const data = await response.json();
         const pair = (data.pairs || []).find(item => item.chainId === 'bsc') || data.pairs?.[0];
         if (!pair || cancelled) return;
@@ -437,8 +437,8 @@ function useDashboardLiveData(pairAddress, tokenSymbol, timeframe) {
         const poolId = pairAddress.toLowerCase();
         const config = CHART_TIMEFRAME_CONFIG[timeframe] || CHART_TIMEFRAME_CONFIG['5分'];
         const [chartResponse, tradesResponse] = await Promise.all([
-          fetch(`https://api.geckoterminal.com/api/v2/networks/bsc/pools/${poolId}/ohlcv/${config.path}?aggregate=${config.aggregate}&limit=${config.limit}&currency=usd`),
-          fetch(`https://api.geckoterminal.com/api/v2/networks/bsc/pools/${poolId}/trades`),
+          fetch(`/api/gecko/api/v2/networks/bsc/pools/${poolId}/ohlcv/${config.path}?aggregate=${config.aggregate}&limit=${config.limit}&currency=usd`),
+          fetch(`/api/gecko/api/v2/networks/bsc/pools/${poolId}/trades`),
         ]);
         const [chartData, tradesData] = await Promise.all([chartResponse.json(), tradesResponse.json()]);
         const nextChart = Array.from(
