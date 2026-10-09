@@ -87,7 +87,7 @@ contract HoneyBeeStaking is Initializable, OwnableUpgradeable, PausableUpgradeab
     event ReferralRewardPaid(uint256 indexed orderId, address indexed receiver, uint256 amount, uint8 level);
     event InterestClaimed(uint256 indexed orderId, address indexed user, uint256 amount, uint8 periodsClaimed);
     event Unstaked(uint256 indexed orderId, address indexed user, uint256 principalReturned, uint256 interestPaid);
-
+    event StakeTokenUpdated(address indexed stakeToken); 
     constructor() {
         _disableInitializers();
     }
@@ -408,5 +408,12 @@ contract HoneyBeeStaking is Initializable, OwnableUpgradeable, PausableUpgradeab
         tierThreeMinAmount = tierThreeMinAmount_;
         emit MinStakeAmountUpdated(minStakeAmount_);
         emit TierThresholdsUpdated(tierTwoMinAmount_, tierThreeMinAmount_);
+    }
+
+
+    function setStakeToken(address stakeToken_) external onlyOwner {
+        if (stakeToken_ == address(0)) revert InvalidAddress();
+        stakeToken = IERC20(stakeToken_);
+        emit StakeTokenUpdated(stakeToken_);
     }
 }

@@ -25,7 +25,7 @@ const wallets = [
   { name: 'Trust Wallet', icon: 'T', tone: '#3375bb' },
 ];
 
-const TOKEN_ADDRESS = '0x20d375b3fafa56cdb872330450ce0ede88bc7777';
+const TOKEN_ADDRESS = '0xa1f1159b2370b519aAfbd83fD15020E008A97777';
 const BNB_ICON_URL = 'https://assets-cdn.trustwallet.com/blockchains/smartchain/info/logo.png';
 const ROUTER_ADDRESS = '0xFaC8034Dbc0934F9ED07C642EC7C49a98644d765';
 const STAKING_ADDRESS = import.meta.env.VITE_STAKING_ADDRESS || '0xa4274465b7970951070205E753abBE6668888888';
