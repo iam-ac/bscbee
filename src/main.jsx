@@ -1008,7 +1008,7 @@ function StakingPage({connected,account,onConnect,showToast,token}) {
         <div className="referrer-input"><span>{referrerLocked?'推荐人':'推荐人（选填）'}</span><input value={displayedReferrer} readOnly={referrerLocked} onChange={e=>setReferrer(e.target.value.trim())} placeholder="0x..."/></div>
         <div className="period-title"><span>选择锁仓周期</span><small>每 30 天可领取一期收益</small></div>
         <div className="period-grid">{[30,60,90,180].map(p=><button key={p} onClick={()=>setPeriod(p)} className={period===p?'active':''}><span>{p} 天</span><small>{p/10} 期</small>{period===p&&<Check size={14}/>}</button>)}</div>
-        <div className="estimate"><div><span>月利率</span><b>{monthlyRate}</b></div><div><span>周期总收益率</span><b>{totalRate}</b></div><div><span>预计解锁时间</span><b>{new Date(Date.now()+period*86400000).toLocaleDateString('zh-CN')}</b></div></div>
+        <div className="estimate"><div><span>月利率</span><b>{monthlyRate}</b></div><div><span>周期总收益率</span><b>{totalRate}</b></div><div><span>预计解锁时间</span><b>{new Date(Date.now()+period*86400000).toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'})}</b></div></div>
         <button className="primary-action" onClick={()=>transact('stake')} disabled={Boolean(busy)||(connected&&!amount)}>{busy.startsWith('stake')?'处理中...':connected?'确认质押':'连接钱包开始质押'}<LockKeyhole size={18}/></button>
       </div>
       <div className="panel position-panel"><div className="panel-head"><div><small>MY POSITION</small><h2>我的蜂巢</h2></div></div>
@@ -1018,7 +1018,7 @@ function StakingPage({connected,account,onConnect,showToast,token}) {
           return <div className={`stake-order ${order.unstaked?'closed':''}`} key={order.id}>
             <div className="order-head"><b className="order-principal">{formatTokenAmount(order.amount,2)} {token.symbol}</b><span>{order.unstaked?'已解押':matured?'已到期':'质押中'}</span></div>
             <div className="order-values"><span>质押周期 <b>{order.durationDays} 天</b></span><span>待领取 <b>{formatTokenAmount(order.pending,2)}</b></span></div>
-            {!order.unstaked&&<div className="dual-actions"><button onClick={()=>transact('unstake',order.id)} disabled={!matured||Boolean(busy)}>{busy===`unstake-${order.id}`?'处理中...':matured?'到期解押':`${new Date(maturityTime*1000).toLocaleDateString('zh-CN')} 到期`}</button><button onClick={()=>transact('claim',order.id)} disabled={!order.claimablePeriods||Boolean(busy)}>{busy===`claim-${order.id}`?'处理中...':`领取收益 (${order.claimablePeriods}期)`}</button></div>}
+            {!order.unstaked&&<div className="dual-actions"><button onClick={()=>transact('unstake',order.id)} disabled={!matured||Boolean(busy)}>{busy===`unstake-${order.id}`?'处理中...':matured?'到期解押':`${new Date(maturityTime*1000).toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'})} 到期`}</button><button onClick={()=>transact('claim',order.id)} disabled={!order.claimablePeriods||Boolean(busy)}>{busy===`claim-${order.id}`?'处理中...':`领取收益 (${order.claimablePeriods}期)`}</button></div>}
           </div>
         })}</div>}
         <div className="position-data"><div><span>我的质押</span><b>{formatTokenAmount(totalStaked,2)} {token.symbol}</b></div><div><span>待领取收益</span><b className="gold">{formatTokenAmount(totalPending,2)} {token.symbol}</b></div></div>
