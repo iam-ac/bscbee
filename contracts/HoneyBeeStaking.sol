@@ -89,6 +89,7 @@ contract HoneyBeeStaking is Initializable, OwnableUpgradeable, PausableUpgradeab
     event Unstaked(uint256 indexed orderId, address indexed user, uint256 principalReturned, uint256 interestPaid);
     event StakeTokenUpdated(address indexed stakeToken);
     event OrderStartTimeUpdated(uint256 indexed orderId, uint64 startTime);
+    event OrderPeriodsFixed(uint256 indexed orderId, uint8 totalPeriods, uint8 claimedPeriods);
     constructor() {
         _disableInitializers();
     }
@@ -398,7 +399,7 @@ contract HoneyBeeStaking is Initializable, OwnableUpgradeable, PausableUpgradeab
     }
 
     function _periodInterest(StakeOrder storage order) internal view returns (uint256) {
-        return order.amount * order.monthlyInterestBps / 30_000;
+        return order.amount * order.monthlyInterestBps / 10_000;
     }
 
     function _accruedPeriods(StakeOrder storage order) internal view returns (uint8) {
@@ -432,6 +433,18 @@ contract HoneyBeeStaking is Initializable, OwnableUpgradeable, PausableUpgradeab
             if (order.unstaked || order.startTime >= beforeTime) continue;
             order.startTime = newStartTime;
             emit OrderStartTimeUpdated(id, newStartTime);
+        }
+    }
+
+    // 存量订单按 10 天一期记账（totalPeriods == durationDays / 10），折算为 30 天一期口径
+    function fixOrderPeriods(uint256[] calldata orderIds) external onlyOwner {
+        for (uint256 i = 0; i < orderIds.length; i++) {
+            StakeOrder storage order = orders[orderIds[i]];
+            if (order.user == address(0) || order.unstaked) continue;
+            if (order.totalPeriods != order.durationDays / 10) continue;
+            order.totalPeriods = order.durationDays / 30;
+            order.claimedPeriods /= 3;
+            emit OrderPeriodsFixed(orderIds[i], order.totalPeriods, order.claimedPeriods);
         }
     }
 }

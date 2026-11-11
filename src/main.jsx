@@ -1007,7 +1007,7 @@ function StakingPage({connected,account,onConnect,showToast,token}) {
         <div className="stake-input"><input value={amount} onChange={e=>setAmount(e.target.value.replace(/[^0-9.]/g,''))} placeholder="输入数量"/><div><TokenLogo token={token.symbol}/><b>{token.symbol}</b></div><button onClick={()=>setAmount(data.balance===null?'':formatInputAmount(data.balance))}>MAX</button></div>
         <div className="referrer-input"><span>{referrerLocked?'推荐人':'推荐人（选填）'}</span><input value={displayedReferrer} readOnly={referrerLocked} onChange={e=>setReferrer(e.target.value.trim())} placeholder="0x..."/></div>
         <div className="period-title"><span>选择锁仓周期</span><small>每 30 天可领取一期收益</small></div>
-        <div className="period-grid">{[30,60,90,180].map(p=><button key={p} onClick={()=>setPeriod(p)} className={period===p?'active':''}><span>{p} 天</span><small>{p/10} 期</small>{period===p&&<Check size={14}/>}</button>)}</div>
+        <div className="period-grid">{[30,60,90,180].map(p=><button key={p} onClick={()=>setPeriod(p)} className={period===p?'active':''}><span>{p} 天</span><small>{p/30} 期</small>{period===p&&<Check size={14}/>}</button>)}</div>
         <div className="estimate"><div><span>月利率</span><b>{monthlyRate}</b></div><div><span>周期总收益率</span><b>{totalRate}</b></div><div><span>预计解锁时间</span><b>{new Date(Date.now()+period*86400000).toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'})}</b></div></div>
         <button className="primary-action" onClick={()=>transact('stake')} disabled={Boolean(busy)||(connected&&!amount)}>{busy.startsWith('stake')?'处理中...':connected?'确认质押':'连接钱包开始质押'}<LockKeyhole size={18}/></button>
       </div>
